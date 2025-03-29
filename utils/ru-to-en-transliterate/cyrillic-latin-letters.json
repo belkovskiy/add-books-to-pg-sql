@@ -1,0 +1,190 @@
+[
+  {
+    "cyrillic": "а",
+    "latin": "a"
+  },
+  {
+    "cyrillic": "б",
+    "latin": "b"
+  },
+  {
+    "cyrillic": "в",
+    "latin": "v"
+  },
+  {
+    "cyrillic": "г",
+    "latin": "g"
+  },
+  {
+    "cyrillic": "д",
+    "latin": "d"
+  },
+  {
+    "cyrillic": "е",
+    "latin": "e"
+  },
+  {
+    "cyrillic": "ё",
+    "latin": "jo"
+  },
+  {
+    "cyrillic": "ж",
+    "latin": "zh"
+  },
+  {
+    "cyrillic": "з",
+    "latin": "z"
+  },
+  {
+    "cyrillic": "и",
+    "latin": "i"
+  },
+  {
+    "cyrillic": "й",
+    "latin": "j"
+  },
+  {
+    "cyrillic": "к",
+    "latin": "k"
+  },
+  {
+    "cyrillic": "л",
+    "latin": "l"
+  },
+  {
+    "cyrillic": "м",
+    "latin": "m"
+  },
+  {
+    "cyrillic": "н",
+    "latin": "n"
+  },
+  {
+    "cyrillic": "о",
+    "latin": "o"
+  },
+  {
+    "cyrillic": "п",
+    "latin": "p"
+  },
+  {
+    "cyrillic": "р",
+    "latin": "r"
+  },
+  {
+    "cyrillic": "с",
+    "latin": "s"
+  },
+  {
+    "cyrillic": "т",
+    "latin": "t"
+  },
+  {
+    "cyrillic": "у",
+    "latin": "u"
+  },
+  {
+    "cyrillic": "ф",
+    "latin": "f"
+  },
+  {
+    "cyrillic": "х",
+    "latin": "h"
+  },
+  {
+    "cyrillic": "ц",
+    "latin": "c"
+  },
+  {
+    "cyrillic": "ч",
+    "latin": "ch"
+  },
+  {
+    "cyrillic": "ш",
+    "latin": "sh"
+  },
+  {
+    "cyrillic": "щ",
+    "latin": "shh"
+  },
+  {
+    "cyrillic": "ы",
+    "latin": "y"
+  },
+  {
+    "cyrillic": "э",
+    "latin": "je"
+  },
+  {
+    "cyrillic": "ю",
+    "latin": "ju"
+  },
+  {
+    "cyrillic": "я",
+    "latin": "ja"
+  },
+  {
+    "cyrillic": "№",
+    "latin": "#"
+  },
+  {
+    "cyrillic": "\"\"",
+    "latin": ""
+  },
+  {
+    "cyrillic": "«»",
+    "latin": ""
+  },
+  {
+    "cyrillic": " ",
+    "latin": "-"
+  },
+  {
+    "cyrillic": ".",
+    "latin": "-"
+  },
+  {
+    "cyrillic": "-",
+    "latin": "-"
+  },
+  {
+    "cyrillic": "0",
+    "latin": "0"
+  },
+  {
+    "cyrillic": "1",
+    "latin": "1"
+  },
+  {
+    "cyrillic": "2",
+    "latin": "2"
+  },
+  {
+    "cyrillic": "3",
+    "latin": "3"
+  },
+  {
+    "cyrillic": "4",
+    "latin": "4"
+  },
+  {
+    "cyrillic": "5",
+    "latin": "5"
+  },
+  {
+    "cyrillic": "6",
+    "latin": "6"
+  },
+  {
+    "cyrillic": "7",
+    "latin": "7"
+  },
+  {
+    "cyrillic": "8",
+    "latin": "8"
+  },
+  {
+    "cyrillic": "9",
+    "latin": "9"
+  }
+]

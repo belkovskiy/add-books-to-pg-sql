@@ -1,0 +1,6 @@
+node_modules
+.env
+data/
+data2/
+data_for_test/
+files/

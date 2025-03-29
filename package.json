@@ -1,0 +1,21 @@
+{
+  "name": "server_with_pg_gr",
+  "version": "1.0.0",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Evgeniy Belkovskiy",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "cli-progress": "^3.12.0",
+    "dotenv": "^16.4.7",
+    "hunspell-spellchecker": "^1.0.2",
+    "json-stable-stringify": "^1.2.1",
+    "node-nlp": "^5.0.0-alpha.5",
+    "pg": "^8.13.3",
+    "typo-js": "^1.2.5",
+    "uuid": "^11.1.0"
+  }
+}
