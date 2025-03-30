@@ -18,14 +18,13 @@ const restoreCursor = () => {
 
 process.on('SIGINT', () => {
   restoreCursor();
-  console.log('\nTerminated!');
+  console.log('\nTerminated!\n');
   multiBar.stop();
   process.exit();
 })
 process.on('exit', () => {
   restoreCursor();
-  // multiBar.stop();
-  console.log("\nExit!");
+  console.log("\nExit!\n");
 });
 
 const multiBar = new cliProgress.MultiBar({
@@ -36,21 +35,8 @@ const multiBar = new cliProgress.MultiBar({
   forceRedraw: true
 }, cliProgress.Presets.shades_grey);
 
-
-
-// const barCurrent = new cliProgress.SingleBar({
-//   format: 'Current: {bar} {percentage}% | {value}/{total} Book Files',
-// }, cliProgress.Presets.shades_classic);
-
-// const barTotal = new cliProgress.SingleBar({
-//   format: 'Total: {bar} {percentage}% | {value}/{total} Books',
-// }, cliProgress.Presets.shades_classic);
-
 let cliCurrentCounter = 0;
 let cliTotalCounter = 0;
-
-let startTime = null;
-let stopTime = null;
 
 const getHead = (str) => {
   let num = str.match(/\d+/);
@@ -69,8 +55,6 @@ const defineIsDictionary = (fileName) => {
       .includes('xdict')
   ) ? true : false;
 }
-
-
 
 function generateHash(data) {
   return crypto
@@ -94,7 +78,7 @@ const pool = new Pool({
   ssl: true
 });
 
-async function checkExisting(bookId, languageId, head, isDictionary, content) {
+async function checkExisting(bookId, languageId, head, isDictionary, content) {  
   const query = `
   SELECT 1 FROM books_json
   WHERE book_id = $1
@@ -116,30 +100,28 @@ async function checkExisting(bookId, languageId, head, isDictionary, content) {
   return result.rowCount > 0;
 }
 
-async function migrateData() {
+const bookProps = {
+  bookId: null,
+  languageId: null,
+  head: null,
+  isDictionary: false  
+}
+const processedBooks = [];
+const failedBooks = [];
 
+async function migrateData() {
   const booksDir = await fs.readdir(allBooksDir, { withFileTypes: true });
 
-  const processedBooks = [];
-  const failedBooks = [];
-
-
   try {
+    multiBar.log('\nПроцесс обработки книг .....\n');
 
     cliTotalCounter = booksDir.length;
     const totalProgress = multiBar.create(cliTotalCounter, 0);
 
-    // barTotal.start(cliTotalCounter, 0);
-
     for (const bookDir of booksDir) {
       if (!bookDir.isDirectory()) continue;
-
-
       const bookName = bookDir.name;
       const bookPath = path.join(allBooksDir, bookName);
-
-      // console.log(`Записывается книга: ${bookName}! Всего книг для записи: ${cliTotalCounter}`);
-      // cliTotalCounter--;
 
       totalProgress.update({ filename: `Книга: ${bookName}` });
 
@@ -148,13 +130,9 @@ async function migrateData() {
       try {
         const files = await fs.readdir(bookPath);
 
-
         cliCurrentCounter = files.length;
 
         const currentProgress = multiBar.create(cliCurrentCounter, 0);
-
-        // barCurrent.start(cliCurrentCounter, 0);
-
 
         for (const file of files) {
           if (!file.endsWith('.json')) continue;
@@ -162,22 +140,11 @@ async function migrateData() {
           const filePath = path.join(bookPath, file);
 
           try {
-
             const rawData = await fs.readFile(filePath, 'utf-8');
-            // console.log(typeof rawData);
-            // const jsonData = JSON.stringify(JSON.parse(rawData));
 
             const jsonData = stableStringify(JSON.parse(rawData));
 
             const fileName = path.basename(filePath);
-
-            // console.log(stableStringify(JSON.parse(rawData)));
-
-            // console.log(fileName);
-            // console.log(rawData);
-            // console.log(jsonData);
-
-
 
             // if (!isValidJson(jsonData)) {
             //   throw new Error('Json Data is Not Valid!');
@@ -188,6 +155,11 @@ async function migrateData() {
 
             const head = getHead(fileName);
             const isDictionary = defineIsDictionary(fileName);
+
+            bookProps.bookId = bookId;
+            bookProps.languageId = languageId;
+            bookProps.head =head;
+            bookProps.isDictionary = isDictionary;           
 
             try {
               await client.query('BEGIN');
@@ -202,7 +174,7 @@ async function migrateData() {
                 jsonData
               );
 
-              if (!exists) {
+              if (!exists) {                
                 const { rows } = await client.query(`
                   INSERT INTO books_json
                   (id, book_id, language_id, head, is_dictionary, content)
@@ -218,118 +190,74 @@ async function migrateData() {
                     jsonData
                   ]);
 
-                // console.log(rows[0].content);
-                // console.log(JSON.stringify(rows[0].content));
-
-                // console.log(stableStringify(rows[0].content));
-
                 if (generateHash(stableStringify(rows[0].content)) !== hashedContent) {
                   throw new Error('Content Error!');
                 }
 
-                // console.log()
                 currentProgress.update({ filename: `Файл книги: ${fileName}` });
-                // console.log(`Записывается файл книги: ${fileName}`);
-
-                // if (generateHash(JSON.stringify(rows[0].content)) !== hashedContent) {
-                //   throw new Error('Content Error!');
-                // }
 
                 await client.query('COMMIT');
                 processedBooks.push({
-                  bookId,
-                  languageId,
-                  head,
-                  isDictionary
+                  ...bookProps
                 });
-
-                // console.log(`Записывается книга: ${bookName}! Всего книг для записи: ${cliTotalCounter}`);
-                // cliCurrentCounter--;
-                // console.log(`Книга: ${bookName}/ Записан файл: Осталось файлов данной книги ${cliCurrentCounter}`);
-
                 currentProgress.increment();
-
-
-                // barCurrent.increment();
-                // console.log('Current Log!');
-
-
-
               } else {
-                currentProgress.update({ filename: 'Глава и/или словарь уже в БД!' });
-
-                // console.log(`\nГлава и/или словарь ${bookId} уже существует в БД!`);
-
+                currentProgress.update({ filename: 'Глава и/или словарь уже существует в БД!' });
                 failedBooks.push({
-                  bookId,
-                  languageId,
-
+                  ...bookProps
                 });
               }
-
-
             } catch (error) {
               await client.query('ROLLBACK');
-              console.error(error);
+              multiBar.log(error, '\n');
+              // console.error(error);
               throw error;
             } finally {
               client.release();
             }
-
           } catch (error) {
             failedBooks.push({
-              bookId,
-              languageId,
-
+              ...bookProps
             });
-            console.error('Error Processing', error);
+            multiBar.log('Error Processing', error, '\n');
+            // console.error('Error Processing', error);
           }
         }
-        // cliTotalCounter--;
+
         multiBar.remove(currentProgress);
         totalProgress.increment();
-        // barCurrent.stop();
-        // barTotal.increment(1);
-
-
 
       } catch (error) {
         failedBooks.push({
           bookName,
           error: `Directory Error ${error.message}`
         });
-        console.error(error);
+        multiBar.log(error, '\n');
+        // console.error(error);
       }
     }
-
     multiBar.stop();
-    // barTotal.stop();
-
-
     return { processedBooks, failedBooks };
   } catch (error) {
-
     console.error(error);
     return { processedBooks, failedBooks };
-
   }
 }
 
 console.time('migrateData');
-
-// startTime = Date.now();
 migrateData().then(({ processedBooks, failedBooks }) => {
-  // stopTime = Date.now();
+  console.log('Время выполнения функции: ');
   console.timeEnd('migrateData');
-  console.log('\nProcessed Complete!');
-  console.log(`\nSuccess: ${processedBooks.length}`);
-  console.log(`\nFailed: ${failedBooks.length}`);
-
-  // console.log(new Date(stopTime - startTime).getMinutes());
+  console.log('\nПроцесс обработки книг завершен!');
+  console.log(`\nВсего успешно записанных книг: ${processedBooks.length}`);
+  console.log(`\nОшибок : ${failedBooks.length}`);
   if (failedBooks.length > 0) {
+    console.log('НЕ записанные, или уже имеющиеся в БД Книги: ');
     console.table(failedBooks, ['bookId', 'languageId', 'head', 'isDictionary']);
+  } else {
+    console.log('Успешно записанные в БД Книги: ');
+    console.table(processedBooks, ['bookId', 'languageId', 'head', 'isDictionary']);
   }
-  
 }).catch(console.error);
 
 
