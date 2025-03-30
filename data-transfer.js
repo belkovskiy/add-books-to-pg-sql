@@ -12,17 +12,45 @@ const camelToKebab = require('./utils/books/camel-to-kebab.js');
 
 const allBooksDir = './data2/books/';
 
+const restoreCursor = () => {
+  process.stdout.write('\x1B[?25h');
+}
 
-const barCurrent = new cliProgress.SingleBar({
-  format: 'Current: {bar} {percentage}% | {value}/{total} strings',
-}, cliProgress.Presets.shades_classic);
+process.on('SIGINT', () => {
+  restoreCursor();
+  console.log('\nTerminated!');
+  multiBar.stop();
+  process.exit();
+})
+process.on('exit', () => {
+  restoreCursor();
+  // multiBar.stop();
+  console.log("\nExit!");
+});
 
-const barTotal = new cliProgress.SingleBar({
-  format: 'Total: {bar} {percentage}% | {value}/{total} strings',
-}, cliProgress.Presets.shades_classic);
+const multiBar = new cliProgress.MultiBar({
+  clearOnComplete: false,
+  hideCursor: true,
+  format: ' {bar} | {filename} | {value}/{total}',
+  stopOnComplete: true,
+  forceRedraw: true
+}, cliProgress.Presets.shades_grey);
+
+
+
+// const barCurrent = new cliProgress.SingleBar({
+//   format: 'Current: {bar} {percentage}% | {value}/{total} Book Files',
+// }, cliProgress.Presets.shades_classic);
+
+// const barTotal = new cliProgress.SingleBar({
+//   format: 'Total: {bar} {percentage}% | {value}/{total} Books',
+// }, cliProgress.Presets.shades_classic);
 
 let cliCurrentCounter = 0;
 let cliTotalCounter = 0;
+
+let startTime = null;
+let stopTime = null;
 
 const getHead = (str) => {
   let num = str.match(/\d+/);
@@ -42,19 +70,7 @@ const defineIsDictionary = (fileName) => {
   ) ? true : false;
 }
 
-// function generateHash2(data) {
-//   const serialized = JSON.stringify(JSON.parse(data), replacer);
-//   return crypto
-//     .createHash('sha256')
-//     .update(serialized)
-//     .digest('hex');
-// };
 
-// function replacer(key, value) {
-//   if (value instanceof Buffer) {
-//     return value.toString('base64');
-//   }
-// }
 
 function generateHash(data) {
   return crypto
@@ -78,23 +94,42 @@ const pool = new Pool({
   ssl: true
 });
 
-// ///////////
+async function checkExisting(bookId, languageId, head, isDictionary, content) {
+  const query = `
+  SELECT 1 FROM books_json
+  WHERE book_id = $1
+    AND language_id = $2
+    AND head IS NOT DISTINCT FROM $3
+    AND is_dictionary = $4
+    AND content = $5::jsonb
+  LIMIT 1
+  `;
 
-const grdmsPath = '';
+  const result = await pool.query(query, [
+    bookId,
+    languageId,
+    head,
+    isDictionary,
+    content
+  ]);
 
-//////////////
+  return result.rowCount > 0;
+}
+
 async function migrateData() {
 
   const booksDir = await fs.readdir(allBooksDir, { withFileTypes: true });
 
-  const processdBooks = [];
+  const processedBooks = [];
   const failedBooks = [];
 
 
   try {
 
     cliTotalCounter = booksDir.length;
-    barTotal.start(cliTotalCounter, 0);
+    const totalProgress = multiBar.create(cliTotalCounter, 0);
+
+    // barTotal.start(cliTotalCounter, 0);
 
     for (const bookDir of booksDir) {
       if (!bookDir.isDirectory()) continue;
@@ -103,7 +138,10 @@ async function migrateData() {
       const bookName = bookDir.name;
       const bookPath = path.join(allBooksDir, bookName);
 
-      // console.log(bookName);
+      // console.log(`Записывается книга: ${bookName}! Всего книг для записи: ${cliTotalCounter}`);
+      // cliTotalCounter--;
+
+      totalProgress.update({ filename: `Книга: ${bookName}` });
 
       const { bookId, languageId } = camelToKebab(bookName);
 
@@ -112,7 +150,10 @@ async function migrateData() {
 
 
         cliCurrentCounter = files.length;
-        barCurrent.start(cliCurrentCounter, 0);
+
+        const currentProgress = multiBar.create(cliCurrentCounter, 0);
+
+        // barCurrent.start(cliCurrentCounter, 0);
 
 
         for (const file of files) {
@@ -136,7 +177,7 @@ async function migrateData() {
             // console.log(rawData);
             // console.log(jsonData);
 
-            // JSON.stringify(JSON.parse('[\r\n  {\r\n    \"text\": \"Dictionary! Hello World!!!\"\r\n  }\r\n]'))
+
 
             // if (!isValidJson(jsonData)) {
             //   throw new Error('Json Data is Not Valid!');
@@ -150,53 +191,81 @@ async function migrateData() {
 
             try {
               await client.query('BEGIN');
-              // console.log(moduleId);
-              // console.log(bookId);
-              // console.log(languageId);
-              // console.log(head);
-              // console.log(isDictionary);
-              // console.log();
+
               const hashedContent = generateHash(jsonData);
-              // console.log(hashedContent);
-              const { rows } = await client.query(`
-                INSERT INTO books_temp
-                (id, book_id, language_id, head, is_dictionary, content)
-                VALUES ($1, $2, $3, $4, $5, $6::jsonb)
-                RETURNING *
-                `,
-                [
-                  moduleId,
-                  bookId,
-                  languageId,
-                  head,
-                  isDictionary,
-                  jsonData
-                ]);
 
-              // console.log(rows[0].content);
-              // console.log(JSON.stringify(rows[0].content));
-
-              // console.log(stableStringify(rows[0].content));
-
-              if (generateHash(stableStringify(rows[0].content)) !== hashedContent) {
-                throw new Error('Content Error!');
-              }
-
-
-              // if (generateHash(JSON.stringify(rows[0].content)) !== hashedContent) {
-              //   throw new Error('Content Error!');
-              // }
-
-              await client.query('COMMIT');
-              processdBooks.push({
+              const exists = await checkExisting(
                 bookId,
                 languageId,
                 head,
-                isDictionary
-              });
+                isDictionary,
+                jsonData
+              );
+
+              if (!exists) {
+                const { rows } = await client.query(`
+                  INSERT INTO books_json
+                  (id, book_id, language_id, head, is_dictionary, content)
+                  VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+                  RETURNING *
+                  `,
+                  [
+                    moduleId,
+                    bookId,
+                    languageId,
+                    head,
+                    isDictionary,
+                    jsonData
+                  ]);
+
+                // console.log(rows[0].content);
+                // console.log(JSON.stringify(rows[0].content));
+
+                // console.log(stableStringify(rows[0].content));
+
+                if (generateHash(stableStringify(rows[0].content)) !== hashedContent) {
+                  throw new Error('Content Error!');
+                }
+
+                // console.log()
+                currentProgress.update({ filename: `Файл книги: ${fileName}` });
+                // console.log(`Записывается файл книги: ${fileName}`);
+
+                // if (generateHash(JSON.stringify(rows[0].content)) !== hashedContent) {
+                //   throw new Error('Content Error!');
+                // }
+
+                await client.query('COMMIT');
+                processedBooks.push({
+                  bookId,
+                  languageId,
+                  head,
+                  isDictionary
+                });
+
+                // console.log(`Записывается книга: ${bookName}! Всего книг для записи: ${cliTotalCounter}`);
+                // cliCurrentCounter--;
+                // console.log(`Книга: ${bookName}/ Записан файл: Осталось файлов данной книги ${cliCurrentCounter}`);
+
+                currentProgress.increment();
 
 
-              barCurrent.increment();
+                // barCurrent.increment();
+                // console.log('Current Log!');
+
+
+
+              } else {
+                currentProgress.update({ filename: 'Глава и/или словарь уже в БД!' });
+
+                // console.log(`\nГлава и/или словарь ${bookId} уже существует в БД!`);
+
+                failedBooks.push({
+                  bookId,
+                  languageId,
+
+                });
+              }
 
 
             } catch (error) {
@@ -216,10 +285,11 @@ async function migrateData() {
             console.error('Error Processing', error);
           }
         }
-
-
-        barCurrent.stop();
-        barTotal.increment();
+        // cliTotalCounter--;
+        multiBar.remove(currentProgress);
+        totalProgress.increment();
+        // barCurrent.stop();
+        // barTotal.increment(1);
 
 
 
@@ -232,64 +302,36 @@ async function migrateData() {
       }
     }
 
+    multiBar.stop();
+    // barTotal.stop();
 
-    barTotal.stop();
 
-
-    return { processdBooks, failedBooks };
+    return { processedBooks, failedBooks };
   } catch (error) {
 
     console.error(error);
-    return { processdBooks, failedBooks };
+    return { processedBooks, failedBooks };
 
   }
-
-
-
-
-
-
-
-  //Fields: id ([PK]uuid), bookId, languageId, head (1-999 || null), isDictionary (true/false), content (json)
-
-
-
-  // try {
-  //  
-
-  // } catch (error) {
-  //   console.error(error);
-  // }
 }
 
-// camelToKebab('zhSoulAndMisteries');
-// camelToKebab('enSoulAndMisteries');
-// camelToKebab('earthIsThinkingPlanet');
-// camelToKebab('enCreatingMan');
-// camelToKebab('itSoulAndMisteries');
-// camelToKebab('ptHighterMindOpens');
-// camelToKebab('ptSoulAndMisteries');
-// camelToKebab('csHigherWorldsMisteries');
+console.time('migrateData');
 
-// console.log(getHead('csHigherWorldsMisteries09.json'));
-// console.log(getHead('csSoulAndMisteries02.json'));
-// console.log(getHead('freedomAndInevitability04.json'));
-// console.log(getHead('creatingSoulXDict.json'));
+// startTime = Date.now();
+migrateData().then(({ processedBooks, failedBooks }) => {
+  // stopTime = Date.now();
+  console.timeEnd('migrateData');
+  console.log('\nProcessed Complete!');
+  console.log(`\nSuccess: ${processedBooks.length}`);
+  console.log(`\nFailed: ${failedBooks.length}`);
 
-// console.log(getHead('csHigherWorldsMisteries19.json'));
-// console.log(getHead('csSoulAndMisteries22.json'));
-// console.log(getHead('freedomAndInevitability04'));
-// console.log(getHead('creatingSoulXDict'));
-
-migrateData().then(({ processdBooks, failedBooks }) => {
-  console.log('Processed Complete!');
-  console.log(`Success: ${processdBooks.length}`);
-  console.log(`Failed: ${failedBooks.length}`);
-
+  // console.log(new Date(stopTime - startTime).getMinutes());
   if (failedBooks.length > 0) {
     console.table(failedBooks, ['bookId', 'languageId', 'head', 'isDictionary']);
   }
+  
 }).catch(console.error);
+
 
 
 
