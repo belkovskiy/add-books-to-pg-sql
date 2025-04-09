@@ -12,6 +12,8 @@ const camelToKebab = require('./utils/books/camel-to-kebab.js');
 
 const allBooksDir = './data2/books/';
 
+const TARGET_TABE_NAME = 'books2';
+
 const restoreCursor = () => {
   process.stdout.write('\x1B[?25h');
 }
@@ -75,12 +77,12 @@ const pool = new Pool({
   username: process.env.PGUSER,
   password: process.env.PGPASSWORD,
   port: 5432,
-  ssl: true
+  // ssl: true
 });
 
 async function checkExisting(bookId, languageId, head, isDictionary, content) {  
   const query = `
-  SELECT 1 FROM books_json
+  SELECT 1 FROM ${TARGET_TABE_NAME}
   WHERE book_id = $1
     AND language_id = $2
     AND head IS NOT DISTINCT FROM $3
@@ -145,6 +147,7 @@ async function migrateData() {
             const jsonData = stableStringify(JSON.parse(rawData));
 
             const fileName = path.basename(filePath);
+            // console.log(fileName);
 
             // if (!isValidJson(jsonData)) {
             //   throw new Error('Json Data is Not Valid!');
@@ -173,10 +176,14 @@ async function migrateData() {
                 isDictionary,
                 jsonData
               );
+              
+              if (!exists) {   
+                // console.log(bookId);
+                // multiBar.log(bookId);
+                // multiBar.log(languageId);
 
-              if (!exists) {                
                 const { rows } = await client.query(`
-                  INSERT INTO books_json
+                  INSERT INTO ${TARGET_TABE_NAME}
                   (id, book_id, language_id, head, is_dictionary, content)
                   VALUES ($1, $2, $3, $4, $5, $6::jsonb)
                   RETURNING *
@@ -248,19 +255,17 @@ console.time('migrateData');
 migrateData().then(({ processedBooks, failedBooks }) => {
   console.log('Время выполнения функции: ');
   console.timeEnd('migrateData');
-  console.log('\nПроцесс обработки книг завершен!');
-  console.log(`\nВсего успешно записанных книг: ${processedBooks.length}`);
+  console.log('\nПроцесс обработки файлов книг завершен!');
+  console.log(`\nВсего успешно записанных файлов: ${processedBooks.length}`);
   console.log(`\nОшибок : ${failedBooks.length}`);
   if (failedBooks.length > 0) {
-    console.log('НЕ записанные, или уже имеющиеся в БД Книги: ');
+    console.log('НЕ записанные, или уже имеющиеся в БД части Книг: ');
     console.table(failedBooks, ['bookId', 'languageId', 'head', 'isDictionary']);
-  } else {
-    console.log('Успешно записанные в БД Книги: ');
+  } 
+  if (processedBooks.length > 0) {
+    console.log('Успешно записанные в БД части Книг: ');
     console.table(processedBooks, ['bookId', 'languageId', 'head', 'isDictionary']);
   }
-}).catch(console.error);
-
-
-
-
-
+})
+.catch(console.error)
+.finally(() => pool.end());
