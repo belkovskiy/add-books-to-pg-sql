@@ -12,7 +12,7 @@ const camelToKebab = require('./utils/books/camel-to-kebab.js');
 
 const allBooksDir = './data2/books/';
 
-const TARGET_TABE_NAME = 'books2';
+const TARGET_TABLE_NAME = 'books2';
 
 const restoreCursor = () => {
   process.stdout.write('\x1B[?25h');
@@ -26,7 +26,7 @@ process.on('SIGINT', () => {
 })
 process.on('exit', () => {
   restoreCursor();
-  console.log("\nExit!\n");
+  console.log("\nSuccessfully Exit!\n");
 });
 
 const multiBar = new cliProgress.MultiBar({
@@ -65,8 +65,8 @@ function generateHash(data) {
     .digest('hex');
 };
 
-function isValidJson(data) {
-  return (typeof data === 'object');
+function isValidJson(data) {    
+  return (typeof data === 'object' || Array.isArray(data));
 };
 
 const { Pool } = require('pg');
@@ -77,12 +77,11 @@ const pool = new Pool({
   username: process.env.PGUSER,
   password: process.env.PGPASSWORD,
   port: 5432,
-  // ssl: true
 });
 
-async function checkExisting(bookId, languageId, head, isDictionary, content) {  
+async function checkExisting(bookId, languageId, head, isDictionary, content) {
   const query = `
-  SELECT 1 FROM ${TARGET_TABE_NAME}
+  SELECT 1 FROM ${TARGET_TABLE_NAME}
   WHERE book_id = $1
     AND language_id = $2
     AND head IS NOT DISTINCT FROM $3
@@ -106,7 +105,7 @@ const bookProps = {
   bookId: null,
   languageId: null,
   head: null,
-  isDictionary: false  
+  isDictionary: false
 }
 const processedBooks = [];
 const failedBooks = [];
@@ -147,11 +146,11 @@ async function migrateData() {
             const jsonData = stableStringify(JSON.parse(rawData));
 
             const fileName = path.basename(filePath);
-            // console.log(fileName);
 
-            // if (!isValidJson(jsonData)) {
-            //   throw new Error('Json Data is Not Valid!');
-            // }
+
+            if (!isValidJson(JSON.parse(rawData))) {
+              throw new Error('Json Data is Not Valid!');
+            }
 
             const client = await pool.connect();
             const moduleId = uuidv4();
@@ -161,8 +160,8 @@ async function migrateData() {
 
             bookProps.bookId = bookId;
             bookProps.languageId = languageId;
-            bookProps.head =head;
-            bookProps.isDictionary = isDictionary;           
+            bookProps.head = head;
+            bookProps.isDictionary = isDictionary;
 
             try {
               await client.query('BEGIN');
@@ -176,14 +175,10 @@ async function migrateData() {
                 isDictionary,
                 jsonData
               );
-              
-              if (!exists) {   
-                // console.log(bookId);
-                // multiBar.log(bookId);
-                // multiBar.log(languageId);
 
+              if (!exists) {
                 const { rows } = await client.query(`
-                  INSERT INTO ${TARGET_TABE_NAME}
+                  INSERT INTO ${TARGET_TABLE_NAME}
                   (id, book_id, language_id, head, is_dictionary, content)
                   VALUES ($1, $2, $3, $4, $5, $6::jsonb)
                   RETURNING *
@@ -217,7 +212,6 @@ async function migrateData() {
             } catch (error) {
               await client.query('ROLLBACK');
               multiBar.log(error, '\n');
-              // console.error(error);
               throw error;
             } finally {
               client.release();
@@ -227,7 +221,6 @@ async function migrateData() {
               ...bookProps
             });
             multiBar.log('Error Processing', error, '\n');
-            // console.error('Error Processing', error);
           }
         }
 
@@ -240,7 +233,6 @@ async function migrateData() {
           error: `Directory Error ${error.message}`
         });
         multiBar.log(error, '\n');
-        // console.error(error);
       }
     }
     multiBar.stop();
@@ -261,11 +253,11 @@ migrateData().then(({ processedBooks, failedBooks }) => {
   if (failedBooks.length > 0) {
     console.log('НЕ записанные, или уже имеющиеся в БД части Книг: ');
     console.table(failedBooks, ['bookId', 'languageId', 'head', 'isDictionary']);
-  } 
+  }
   if (processedBooks.length > 0) {
     console.log('Успешно записанные в БД части Книг: ');
     console.table(processedBooks, ['bookId', 'languageId', 'head', 'isDictionary']);
   }
 })
-.catch(console.error)
-.finally(() => pool.end());
+  .catch(console.error)
+  .finally(() => pool.end());
