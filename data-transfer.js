@@ -12,7 +12,9 @@ const camelToKebab = require('./utils/books/camel-to-kebab.js');
 
 const allBooksDir = './data2/books/';
 
-const TARGET_TABLE_NAME = 'books2';
+const TARGET_TABLE_NAME = 'books333';
+
+const dataToExcel = require('./utils/data-to-excel/data-to-excel.js');
 
 const restoreCursor = () => {
   process.stdout.write('\x1B[?25h');
@@ -65,7 +67,7 @@ function generateHash(data) {
     .digest('hex');
 };
 
-function isValidJson(data) {    
+function isValidJson(data) {
   return (typeof data === 'object' || Array.isArray(data));
 };
 
@@ -77,9 +79,30 @@ const pool = new Pool({
   username: process.env.PGUSER,
   password: process.env.PGPASSWORD,
   port: 5432,
+  // sslmode: 'prefer'
 });
 
-async function checkExisting(bookId, languageId, head, isDictionary, content) {
+async function checkExisting(bookId, languageId, head, isDictionary) {
+  const query = `
+  SELECT 1 FROM ${TARGET_TABLE_NAME}
+  WHERE book_id = $1
+    AND language_id = $2
+    AND head IS NOT DISTINCT FROM $3
+    AND is_dictionary = $4    
+  LIMIT 1
+  `;
+
+  const result = await pool.query(query, [
+    bookId,
+    languageId,
+    head,
+    isDictionary,
+  ]);
+
+  return result.rowCount > 0;
+}
+
+async function checkExistingOnFullParams(bookId, languageId, head, isDictionary, content) {
   const query = `
   SELECT 1 FROM ${TARGET_TABLE_NAME}
   WHERE book_id = $1
@@ -108,13 +131,15 @@ const bookProps = {
   isDictionary: false
 }
 const processedBooks = [];
-const failedBooks = [];
+const existsBookModules = [];
+const notRecordedBooks = [];
+const notSameContentBookModules = [];
 
 async function migrateData() {
   const booksDir = await fs.readdir(allBooksDir, { withFileTypes: true });
 
   try {
-    multiBar.log('\nПроцесс обработки книг .....\n');
+    multiBar.log('\nПроцесс обработки модулей книг .....\n');
 
     cliTotalCounter = booksDir.length;
     const totalProgress = multiBar.create(cliTotalCounter, 0);
@@ -173,8 +198,21 @@ async function migrateData() {
                 languageId,
                 head,
                 isDictionary,
+              );
+
+              const existsWithContent = await checkExistingOnFullParams(
+                bookId,
+                languageId,
+                head,
+                isDictionary,
                 jsonData
               );
+
+              if (!existsWithContent) {
+                notSameContentBookModules.push({
+                  ...bookProps
+                });
+              }
 
               if (!exists) {
                 const { rows } = await client.query(`
@@ -205,7 +243,7 @@ async function migrateData() {
                 currentProgress.increment();
               } else {
                 currentProgress.update({ filename: 'Глава и/или словарь уже существует в БД!' });
-                failedBooks.push({
+                existsBookModules.push({
                   ...bookProps
                 });
               }
@@ -217,7 +255,7 @@ async function migrateData() {
               client.release();
             }
           } catch (error) {
-            failedBooks.push({
+            notRecordedBooks.push({
               ...bookProps
             });
             multiBar.log('Error Processing', error, '\n');
@@ -228,7 +266,7 @@ async function migrateData() {
         totalProgress.increment();
 
       } catch (error) {
-        failedBooks.push({
+        notRecordedBooks.push({
           bookName,
           error: `Directory Error ${error.message}`
         });
@@ -236,27 +274,39 @@ async function migrateData() {
       }
     }
     multiBar.stop();
-    return { processedBooks, failedBooks };
+    return { processedBooks, existsBookModules, notRecordedBooks, notSameContentBookModules };
   } catch (error) {
     console.error(error);
-    return { processedBooks, failedBooks };
+    return { processedBooks, existsBookModules, notRecordedBooks, notSameContentBookModules };
   }
 }
 
 console.time('migrateData');
-migrateData().then(({ processedBooks, failedBooks }) => {
+migrateData().then(({ processedBooks, existsBookModules, notRecordedBooks, notSameContentBookModules }) => {
   console.log('Время выполнения функции: ');
   console.timeEnd('migrateData');
   console.log('\nПроцесс обработки файлов книг завершен!');
   console.log(`\nВсего успешно записанных файлов: ${processedBooks.length}`);
-  console.log(`\nОшибок : ${failedBooks.length}`);
-  if (failedBooks.length > 0) {
-    console.log('НЕ записанные, или уже имеющиеся в БД части Книг: ');
-    console.table(failedBooks, ['bookId', 'languageId', 'head', 'isDictionary']);
+  console.log(`\nИмеющихся модулей книг : ${existsBookModules.length}`);
+  if (existsBookModules.length > 0) {
+    console.log('Имеющиеся в БД модули книг: ');
+    console.table(existsBookModules, ['bookId', 'languageId', 'head', 'isDictionary']);
+    dataToExcel('Имеющиеся в Базе Данных модули книг', existsBookModules, 'exists-book-modules', true);
   }
   if (processedBooks.length > 0) {
-    console.log('Успешно записанные в БД части Книг: ');
+    console.log('Успешно записанные в БД модули книг: ');
     console.table(processedBooks, ['bookId', 'languageId', 'head', 'isDictionary']);
+    dataToExcel('Успешно записанные в Базу Данных модули книг', processedBooks, 'successfully-recorded', false);
+  }
+  if (notRecordedBooks.length > 0) {
+    console.log('Не записанные в БД модули книг (эти модули уже имеются в БД)');
+    console.table(existsBookModules, ['bookId', 'languageId', 'head', 'isDictionary']);
+    dataToExcel('Не записанные в БД модули книг (эти модули уже имеются в БД)', notRecordedBooks, 'not-recorded-book-modules', true);
+  }
+  if (notSameContentBookModules.length > 0) {
+    console.log('Имеющиеся в БД модули книг с несовпадающим полем \'content\': ');
+    console.table(existsBookModules, ['bookId', 'languageId', 'head', 'isDictionary']);
+    dataToExcel('Имеющиеся в БД модули книг с несовпадающим полем \'content\'', notSameContentBookModules, 'not-same-content-exists-book-modules', true);
   }
 })
   .catch(console.error)
